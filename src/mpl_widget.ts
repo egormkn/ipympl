@@ -1,4 +1,5 @@
 import { throttle } from 'lodash';
+import { v1 as uuidv1 } from 'uuid';
 
 import {
     DOMWidgetModel,
@@ -14,6 +15,8 @@ import { MODULE_VERSION } from './version';
 
 import { ToolbarView } from './toolbar_widget';
 
+type FileSystemFileHandle = any;
+
 export class MPLCanvasModel extends DOMWidgetModel {
     offscreen_canvas: HTMLCanvasElement;
     offscreen_context: CanvasRenderingContext2D;
@@ -22,6 +25,7 @@ export class MPLCanvasModel extends DOMWidgetModel {
     ratio: number;
     waiting_for_image: boolean;
     image: HTMLImageElement;
+    file_handles: { [index: string]: FileSystemFileHandle };
 
     defaults() {
         return {
@@ -78,6 +82,8 @@ export class MPLCanvasModel extends DOMWidgetModel {
         this.requested_size = null;
         this.resize_requested = false;
         this.ratio = (window.devicePixelRatio || 1) / backingStore;
+
+        this.file_handles = {};
 
         this.resize_canvas();
 
@@ -155,6 +161,81 @@ export class MPLCanvasModel extends DOMWidgetModel {
         document.body.appendChild(save);
         save.click();
         document.body.removeChild(save);
+    }
+
+    handle_download(
+        msg: { [index: string]: any },
+        buffers: (ArrayBuffer | ArrayBufferView)[]
+    ) {
+        const buffer = new Uint8Array(
+            ArrayBuffer.isView(buffers[0]) ? buffers[0].buffer : buffers[0]
+        );
+        const blob = new Blob([buffer], { type: msg.mimetype });
+
+        // Put false inside this condition to disable File System API
+        if (window.showSaveFilePicker !== undefined) {
+            if (msg.uuid !== undefined) {
+                const handle = this.file_handles[msg.uuid];
+                delete this.file_handles[msg.uuid];
+
+                handle.createWritable().then((writable: any) => {
+                    writable.write(blob).then(() => {
+                        writable.close();
+                    });
+                });
+                return;
+            }
+
+            const options = {
+                excludeAcceptAllOption: true,
+                suggestedName: this.get('_figure_label'),
+                types: [
+                    {
+                        description: 'PNG',
+                        accept: { 'image/png': ['.png'] },
+                    },
+                    {
+                        description: 'JPG',
+                        accept: { 'image/jpeg': ['.jpg', '.jpeg'] },
+                    },
+                    {
+                        description: 'SVG',
+                        accept: { 'image/svg+xml': ['.svg'] },
+                    },
+                    {
+                        description: 'PDF',
+                        accept: { 'application/pdf': ['.pdf'] },
+                    },
+                    {
+                        description: 'PGF',
+                        accept: { 'image/x-pgf': ['.pgf'] },
+                    },
+                    {
+                        description: 'EPS',
+                        accept: { 'image/eps': ['.eps'] },
+                    },
+                ],
+            };
+            const file_handles = this.file_handles;
+            window.showSaveFilePicker(options).then((handle: FileSystemFileHandle) => {
+                    const format = 'svg'; // TODO: Use selected type
+                    const uuid = uuidv1();
+                    file_handles[uuid] = handle;
+                    this.send_message('download', { format, uuid });
+                });
+        } else {
+            const url_creator = window.URL || window.webkitURL;
+            const image_url = url_creator.createObjectURL(blob);
+
+            const save = document.createElement('a');
+            save.href = image_url;
+            save.download = this.get('_figure_label') + '.' + msg.format;
+            document.body.appendChild(save);
+            save.click();
+            document.body.removeChild(save);
+
+            url_creator.revokeObjectURL(image_url);
+        }
     }
 
     handle_resize(msg: { [index: string]: any }) {

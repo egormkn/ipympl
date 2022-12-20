@@ -19,6 +19,7 @@ except ModuleNotFoundError:
 import io
 import json
 from base64 import b64encode
+from mimetypes import types_map
 
 try:
     from collections.abc import Iterable
@@ -149,9 +150,10 @@ class Toolbar(DOMWidget, NavigationToolbar2WebAgg):
             'export': 'file-picture-o',
         }
 
-        download_item = ('Download', 'Download plot', 'download', 'save_figure')
+        download_item = ('Download', 'Download plot', 'download', 'download')
+        export_item = ('Export', 'Export to PNG', 'export', 'save_figure')
 
-        toolitems = NavigationToolbar2.toolitems + (download_item,)
+        toolitems = NavigationToolbar2.toolitems + (download_item, export_item)
 
         return [
             (text, tooltip, icons[icon_name], method_name)
@@ -274,6 +276,28 @@ class Canvas(DOMWidget, FigureCanvasWebAggCore):
         elif content['type'] == 'set_dpi_ratio':
             Canvas.current_dpi_ratio = content['dpi_ratio']
             self.manager.handle_json(content)
+
+        elif (content['type'] == 'toolbar_button' and content['name'] == 'download') or content['type'] == 'download':
+            uuid = content['uuid']
+            
+            if uuid is not None:
+                fmt = content['format']
+            else:
+                fmt = matplotlib.rcParams['savefig.format']
+                if fmt in ('', 'png'):
+                    fmt = 'svg'
+            mimetype = types_map['.' + fmt]
+
+            buf = io.BytesIO()
+            self.figure.savefig(buf, format=fmt)
+            
+            data = {
+                "type": "download",
+                "uuid": uuid,
+                "format": fmt,
+                "mimetype": mimetype,
+            }
+            self.send({'data': json.dumps(data)}, buffers=[buf.getbuffer()])
 
         else:
             self.manager.handle_json(content)
