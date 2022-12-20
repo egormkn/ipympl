@@ -173,7 +173,7 @@ export class MPLCanvasModel extends DOMWidgetModel {
         const blob = new Blob([buffer], { type: msg.mimetype });
 
         // Put false inside this condition to disable File System API
-        if (window.showSaveFilePicker !== undefined) {
+        if ((window as any).showSaveFilePicker !== undefined) {
             if (msg.uuid !== undefined) {
                 const handle = this.file_handles[msg.uuid];
                 delete this.file_handles[msg.uuid];
@@ -217,7 +217,9 @@ export class MPLCanvasModel extends DOMWidgetModel {
                 ],
             };
             const file_handles = this.file_handles;
-            window.showSaveFilePicker(options).then((handle: FileSystemFileHandle) => {
+            (window as any)
+                .showSaveFilePicker(options)
+                .then((handle: FileSystemFileHandle) => {
                     const format = 'svg'; // TODO: Use selected type
                     const uuid = uuidv1();
                     file_handles[uuid] = handle;
